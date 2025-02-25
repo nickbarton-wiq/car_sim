@@ -3,7 +3,7 @@ from math import sin, cos, radians, degrees, copysign
 from pyray import (
     init_window, close_window, window_should_close, get_frame_time, begin_drawing, clear_background, draw_text,
     end_drawing, begin_mode_3d, end_mode_3d, draw_grid, load_model, draw_model_ex, is_key_down,
-    Camera3D, Vector3, RAYWHITE, DARKGRAY,
+    Camera3D, Vector3, RAYWHITE, DARKGRAY
 )
 from raylib import CAMERA_PERSPECTIVE, KEY_UP, KEY_DOWN, KEY_SPACE, KEY_RIGHT, KEY_LEFT
 
@@ -12,7 +12,7 @@ class Car:
     def __init__(self, model, x, z, angle=0, length=4, max_steering=50, max_acceleration=10.0):
         self.model = model
         self.position = Vector3(x, 0, z)
-        self.velocity = Vector3(0, 0, 0)
+        self.velocity = Vector3()
         self.angle = angle
         self.length = length
         self.max_acceleration = max_acceleration
@@ -37,25 +37,43 @@ class Car:
             angular_velocity = 0
 
         self.angle += degrees(angular_velocity) * dt
+        self.angle %= 360
 
         # Update position based on velocity and direction
         self.position.x += self.velocity.x * sin(radians(self.angle)) * dt
         self.position.z += self.velocity.x * cos(radians(self.angle)) * dt
 
+    def draw(self):
+        draw_model_ex(self.model, self.position, Vector3(0, 1, 0), car.angle, Vector3(0.25, 0.25, 0.25), RAYWHITE)
+
+
+class Camera:
+    def __init__(self, car: Car):
+        self.camera = Camera3D()
+        self.camera.position.x = car.position.x - 10
+        self.camera.position.y = car.position.y + 5.0
+        self.camera.position.z = car.position.z - 10
+        self.camera.target = car.position
+        self.camera.up = Vector3(0.0, 1.0, 0.0)
+        self.camera.fovy = 60.0
+        self.camera.projection = CAMERA_PERSPECTIVE
+
+    def update(self, car: Car):
+
+        self.camera_angle = radians(car.angle)
+        self.camera.position.x = car.position.x - 10 * sin(self.camera_angle)
+        self.camera.position.y = car.position.y + 5.0
+        self.camera.position.z = car.position.z - 10 * cos(self.camera_angle)
+        self.camera.target = car.position
+
 
 init_window(1920, 1080, "3D Car prototype")
-
-# camera
-camera = Camera3D()
-camera.position = Vector3(0.0, 5.0, 10.0)
-camera.target = Vector3(0.0, 0.0, 0.0)
-camera.up = Vector3(0.0, 0.0, -1.0)
-camera.fovy = 60.0
-camera.projection = CAMERA_PERSPECTIVE
 
 # model
 car_model = load_model(os.path.join("resources", "car_model", "car.glb"))
 car = Car(car_model, 0, 0)
+# camera
+camera = Camera(car)
 
 while not window_should_close():
     dt = get_frame_time()
@@ -94,18 +112,23 @@ while not window_should_close():
 
     # Logic
     car.update(dt)
+    camera.update(car)
 
     # Drawing
     clear_background(RAYWHITE)
     begin_drawing()
 
-    begin_mode_3d(camera)
+    # Draw 3D
+    begin_mode_3d(camera.camera)
     draw_grid(100, 1)
-    draw_model_ex(car.model, car.position, Vector3(0, 1, 0), car.angle, Vector3(0.5, 0.5, 0.5), RAYWHITE)
+    car.draw()
     end_mode_3d()
-    draw_text(f"position: x:{car.position.x}, y:{car.position.y}, z:{car.position.z}", 10, 10, 20, DARKGRAY)
-    draw_text(f"velocity: x:{car.velocity.x}, y:{car.velocity.y}, z:{car.velocity.z}", 10, 40, 20, DARKGRAY)
+
+    # Draw Debug
+    draw_text(f"position: x:{car.position.x:.2f}, y:{car.position.y:.2f}, z:{car.position.z:.2f}", 10, 10, 20, DARKGRAY)
+    draw_text(f"velocity: x:{car.velocity.x:.2f}, y:{car.velocity.y:.2f}, z:{car.velocity.z:.2f}", 10, 40, 20, DARKGRAY)
     draw_text(f"steering: {car.steering:.2f}", 10, 70, 20, DARKGRAY)
-    draw_text(f"angle: {car.angle}", 10, 100, 20, DARKGRAY)
+    draw_text(f"angle: {car.angle:.2f}", 10, 100, 20, DARKGRAY)
+    draw_text(f"camera_angle: {camera.camera_angle:.2f}", 10, 130, 20, DARKGRAY)
     end_drawing()
 close_window()
