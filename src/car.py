@@ -1,8 +1,7 @@
 from enum import Enum, auto
 from math import sin, cos, radians, degrees, sqrt, atan2, copysign
-from pyray import (
-    draw_model_ex, Vector3, RAYWHITE, is_key_down, get_mouse_position, get_screen_to_world_ray, get_ray_collision_quad
-)
+from pyray import draw_model_ex, is_key_down, get_mouse_position, get_screen_to_world_ray, get_ray_collision_quad
+from pyray import Vector3, RAYWHITE
 from raylib import KEY_UP, KEY_DOWN, KEY_SPACE, KEY_RIGHT, KEY_LEFT
 
 
@@ -47,6 +46,7 @@ class Car:
         self.length = length
         self.max_acceleration = max_acceleration
         self.max_steering = max_steering
+        self.steering_factor = 400  # Increase steering_factor for tighter turns
         self.max_velocity = 5
         self.brake_deceleration = 20
         self.free_deceleration = 2
@@ -55,7 +55,7 @@ class Car:
         self.navigation: Navigation | ManualControl = ManualControl()
         self.acceleration = 0.0
         self.steering = 0.0
-        self.waypoint: Vector3 | None = None
+        self.waypoints = []
 
     def draw(self):
         """Draw the car model"""
@@ -63,8 +63,8 @@ class Car:
 
     def update(self, dt):
         """Update the car navigation method and position"""
-        if self.waypoint:
-            self.navigate_to_waypoint(self.waypoint)
+        if self.waypoints:
+            self.navigate_to_waypoint(self.waypoints[0])  # Navigate to the first waypoint
         else:
             self.manual_navigation()
         self.update_position(dt)
@@ -151,12 +151,13 @@ class Car:
         else:
             self.navigation.acceleration = AccelerationCommand.NONE
 
-    def set_waypoint(self, camera, world):
-        """Set the waypoint to the current mouse position"""
+    def add_waypoint(self, camera, world):
+        """Add a waypoint to the list of waypoints"""
         mouse_pos = get_mouse_position()
         ray = get_screen_to_world_ray(mouse_pos, camera.camera)
         collision_point = get_ray_collision_quad(ray, world.p1, world.p2, world.p3, world.p4)
-        self.waypoint = Vector3(collision_point.point.x, collision_point.point.y + 0.3, collision_point.point.z)
+        new_waypoint = Vector3(collision_point.point.x, collision_point.point.y + 0.3, collision_point.point.z)
+        self.waypoints.append(new_waypoint)
 
     def navigate_to_waypoint(self, waypoint):
         """Sets the pedal and steering inputs to navigate to the waypoint"""
@@ -170,14 +171,7 @@ class Car:
 
         # Calculate angle difference considering circular nature of angles
         angle_diff = (target_angle - self.angle + 180) % 360 - 180
-
-        # Apply more responsive steering for tighter turns
-        # Increased steering factor for faster turning response
-        steering_factor = 400
-        self.steering = max(-self.max_steering, min(self.max_steering, angle_diff * steering_factor))
-
-        # Calculate distance to waypoint
-        distance = sqrt(dx*dx + dz*dz)
+        self.steering = max(-self.max_steering, min(self.max_steering, angle_diff * self.steering_factor))
 
         # Set steering direction
         if abs(angle_diff) > 5:
@@ -185,43 +179,46 @@ class Car:
         else:
             self.navigation.steering = SteeringDirection.NONE
 
-        # Calculate if we're facing the waypoint or away from it
-        # Consider "facing" as within 90 degrees (instead of 100)
+        # Calculate distance to waypoint
+        distance = sqrt(dx*dx + dz*dz)
+
+        # Calculate if we're facing the waypoint or away from it. Consider "facing" as within 90 degrees
         facing_waypoint = abs(angle_diff) < 90
 
-        # Set acceleration command based on distance, orientation, and current velocity
-        if distance > 5:
-            # Far from waypoint
-            self.navigation.acceleration = AccelerationCommand.ACCELERATE
-        elif distance > 3 and not facing_waypoint:
-            # If we're not moving or moving slowly, it's more efficient to reverse
-            if abs(self.velocity.x) < 0.5:
-                self.navigation.acceleration = AccelerationCommand.REVERSE
-            # If we're already moving backwards significantly, continue reversing
-            elif self.velocity.x < -0.5:
-                self.navigation.acceleration = AccelerationCommand.REVERSE
-            # If we're moving forward but facing away, brake and turn
-            else:
-                self.navigation.acceleration = AccelerationCommand.BRAKE
-        elif distance > 1:
-            # Getting closer - reduce speed for more precise turning
-            if facing_waypoint:
-                # Reduce target speed for better control in tight turns
-                target_speed = min(self.max_velocity * 0.5, distance)
-                if self.velocity.x < target_speed:
-                    self.navigation.acceleration = AccelerationCommand.ACCELERATE
+        # Check if this is the last waypoint
+        is_last_waypoint = len(self.waypoints) == 1
+        if is_last_waypoint:
+            if distance >= 3:
+                # Far from waypoint - accelerate
+                self.navigation.acceleration = AccelerationCommand.ACCELERATE
+            if distance < 3:
+                # Getting closer - reduce speed for more precise turning
+                if facing_waypoint:
+                    # Reduce target speed for better control in tight turns
+                    speed_factor = 0.5
+                    target_speed = min(self.max_velocity * speed_factor, distance)
+                    if self.velocity.x < target_speed:
+                        self.navigation.acceleration = AccelerationCommand.ACCELERATE
+                    else:
+                        self.navigation.acceleration = AccelerationCommand.NONE
                 else:
+                    # We're facing away from target but close - use reverse
+                    self.navigation.acceleration = AccelerationCommand.REVERSE
+            if distance <= 1.5:
+                # Very close to waypoint
+                if abs(self.velocity.x) < 0.1:
+                    self.waypoints.pop(0)
+                    self.navigation.acceleration = AccelerationCommand.STOP
+                    self.velocity.x = 0
+                    self.navigation.steering = SteeringDirection.NONE
                     self.navigation.acceleration = AccelerationCommand.NONE
-            else:
-                # We're facing away from target but close - use reverse
-                self.navigation.acceleration = AccelerationCommand.REVERSE
+                else:
+                    self.navigation.acceleration = AccelerationCommand.BRAKE
         else:
-            # Very close to waypoint
-            if abs(self.velocity.x) < 0.1 and distance < 0.5:
-                self.navigation.acceleration = AccelerationCommand.STOP
-                self.velocity.x = 0
-                self.waypoint = None
-                self.navigation.steering = SteeringDirection.NONE
-                self.navigation.acceleration = AccelerationCommand.NONE
-            else:
-                self.navigation.acceleration = AccelerationCommand.BRAKE  # Actively brake to stop
+            if facing_waypoint:
+                self.navigation.acceleration = AccelerationCommand.ACCELERATE
+            elif not facing_waypoint:  # Not facing waypoint
+                self.navigation.acceleration = AccelerationCommand.REVERSE
+            # if we are close to the waypoint, remove it and move to the next one
+            if distance < 1:
+                self.waypoints.pop(0)

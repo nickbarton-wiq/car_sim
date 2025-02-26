@@ -3,7 +3,7 @@ from math import sqrt
 from pyray import (
     init_window, close_window, window_should_close, get_frame_time, begin_drawing, clear_background, draw_text,
     end_drawing, begin_mode_3d, end_mode_3d, load_model, draw_model_ex, load_model_from_mesh, gen_mesh_cone, GREEN,
-    Vector3, RAYWHITE, DARKGRAY, is_mouse_button_pressed
+    Vector3, RAYWHITE, DARKGRAY, is_mouse_button_pressed, RED
 )
 from raylib import MOUSE_BUTTON_LEFT
 
@@ -36,7 +36,7 @@ while not window_should_close():
 
     # Check for waypoint setting
     if is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-        car.set_waypoint(camera, world)
+        car.add_waypoint(camera, world)
 
     # Update car position
     car.update(dt)
@@ -50,8 +50,16 @@ while not window_should_close():
     world.draw_floor()  # Draw the floor
     world.draw_grid()
     car.draw()
-    if car.waypoint:
-        draw_model_ex(waypoint_model, car.waypoint, Vector3(1, 0, 0), 180, Vector3(0.3, 0.3, 0.3), GREEN)
+
+    # Draw waypoints - first one green, rest are red
+    if car.waypoints:
+        # Draw first waypoint (current target) in green
+        draw_model_ex(waypoint_model, car.waypoints[0], Vector3(1, 0, 0), 180, Vector3(0.3, 0.3, 0.3), GREEN)
+
+        # Draw other waypoints in red
+        for waypoint in car.waypoints[1:]:
+            draw_model_ex(waypoint_model, waypoint, Vector3(1, 0, 0), 180, Vector3(0.3, 0.3, 0.3), RED)
+
     end_mode_3d()
 
     # Draw debug data
@@ -59,9 +67,13 @@ while not window_should_close():
     draw_text(f"velocity: x:{car.velocity.x:.2f}, y:{car.velocity.y:.2f}, z:{car.velocity.z:.2f}", 10, 40, 20, DARKGRAY)
     draw_text(f"steering: {car.steering:.2f}", 10, 70, 20, DARKGRAY)
     draw_text(f"angle: {car.angle:.2f}", 10, 100, 20, DARKGRAY)
-    if car.waypoint:
+
+    if car.waypoints:
         draw_text(f"navigation: {car.navigation}", 10, 130, 20, DARKGRAY)
-        draw_text(f"distance: {sqrt((car.waypoint.x - car.position.x)**2 + (car.waypoint.z - car.position.z)**2):.2f}",
-                  10, 160, 20, DARKGRAY)
+        current_waypoint = car.waypoints[0]
+        distance = sqrt((current_waypoint.x - car.position.x)**2 + (current_waypoint.z - car.position.z)**2)
+        draw_text(f"distance to next waypoint: {distance:.2f}", 10, 160, 20, DARKGRAY)
+        draw_text(f"waypoints remaining: {len(car.waypoints)}", 10, 190, 20, DARKGRAY)
+
     end_drawing()
 close_window()
