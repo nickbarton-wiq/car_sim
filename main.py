@@ -22,8 +22,8 @@ car_model = load_model(os.path.join("resources", "car_model", "car.glb"))
 car = Car(car_model, 0, 0, max_steering=40)
 
 # Waypoint
-cone_mesh = gen_mesh_cone(0.5, 1.0, 20)
-cone_model = load_model_from_mesh(cone_mesh)
+waypoint_mesh = gen_mesh_cone(0.5, 1.0, 20)
+waypoint_model = load_model_from_mesh(waypoint_mesh)
 
 # Camera
 camera = FreeCamera()
@@ -38,13 +38,7 @@ while not window_should_close():
     if is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
         car.set_waypoint(camera, world)
 
-    # Car navigation
-    if car.waypoint:
-        car.navigate_to_waypoint(car.waypoint)
-    else:
-        car.manual_navigation()
-
-    # Logic
+    # Update car position
     car.update(dt)
 
     # Drawing
@@ -57,10 +51,10 @@ while not window_should_close():
     world.draw_grid()
     car.draw()
     if car.waypoint:
-        draw_model_ex(cone_model, car.waypoint, Vector3(1, 0, 0), 180, Vector3(0.3, 0.3, 0.3), GREEN)
+        draw_model_ex(waypoint_model, car.waypoint, Vector3(1, 0, 0), 180, Vector3(0.3, 0.3, 0.3), GREEN)
     end_mode_3d()
 
-    # Draw Debug
+    # Draw debug data
     draw_text(f"position: x:{car.position.x:.2f}, y:{car.position.y:.2f}, z:{car.position.z:.2f}", 10, 10, 20, DARKGRAY)
     draw_text(f"velocity: x:{car.velocity.x:.2f}, y:{car.velocity.y:.2f}, z:{car.velocity.z:.2f}", 10, 40, 20, DARKGRAY)
     draw_text(f"steering: {car.steering:.2f}", 10, 70, 20, DARKGRAY)

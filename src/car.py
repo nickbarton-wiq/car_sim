@@ -58,10 +58,19 @@ class Car:
         self.waypoint: Vector3 | None = None
 
     def draw(self):
+        """Draw the car model"""
         draw_model_ex(self.model, self.position, Vector3(0, 1, 0), self.angle, Vector3(0.25, 0.25, 0.25), RAYWHITE)
 
+    def update(self, dt):
+        """Update the car navigation method and position"""
+        if self.waypoint:
+            self.navigate_to_waypoint(self.waypoint)
+        else:
+            self.manual_navigation()
+        self.update_position(dt)
+
     def handle_steering_wheel_input(self, dt):
-        # Handle steering based on navigation or manual input
+        """Handle steering inputs"""
         if self.navigation.steering == SteeringDirection.RIGHT:
             self.steering -= self.max_steering * dt
         elif self.navigation.steering == SteeringDirection.LEFT:
@@ -70,8 +79,20 @@ class Car:
             self.steering = 0
         self.steering = max(-self.max_steering, min(self.steering, self.max_steering))
 
+        # Update angle based on steering and velocity
+        if self.steering:
+            # Reduced turning radius for tighter turns
+            turning_radius = self.length / (2 * sin(radians(self.steering)))
+            # Multiply by 2 for faster turning rate
+            angular_velocity = 2 * self.velocity.x / turning_radius
+        else:
+            angular_velocity = 0
+
+        self.angle += degrees(angular_velocity) * dt
+        self.angle %= 360
+
     def handle_pedal_input(self, dt):
-        # Handle acceleration based on navigation or manual input
+        """Handle acceleration inputs"""
         if self.navigation.acceleration == AccelerationCommand.ACCELERATE:
             if self.velocity.x < 0:
                 self.acceleration = self.brake_deceleration
@@ -96,34 +117,23 @@ class Car:
             else:
                 if dt != 0:
                     self.acceleration = -self.velocity.x / dt
-
         self.acceleration = max(-self.max_acceleration, min(self.acceleration, self.max_acceleration))
 
-    def update(self, dt):
-        self.handle_pedal_input(dt)
         # Update velocity based on acceleration
         self.velocity.x += self.acceleration * dt
         self.velocity.x = max(-self.max_velocity, min(self.velocity.x, self.max_velocity))
 
+    def update_position(self, dt):
+        """Update the car's position from pedal and steering inputs"""
+        self.handle_pedal_input(dt)
         self.handle_steering_wheel_input(dt)
-        # Update angle based on steering and velocity
-        if self.steering:
-            # Reduced turning radius for tighter turns
-            turning_radius = self.length / (2 * sin(radians(self.steering)))
-            # Multiply by 2 for faster turning rate
-            angular_velocity = 2 * self.velocity.x / turning_radius
-        else:
-            angular_velocity = 0
 
-        self.angle += degrees(angular_velocity) * dt
-        self.angle %= 360
-
-        # Update position based on velocity and direction
+        # Update position based on pedal and steering input
         self.position.x += self.velocity.x * sin(radians(self.angle)) * dt
         self.position.z += self.velocity.x * cos(radians(self.angle)) * dt
 
     def manual_navigation(self):
-        """Sets the manual control based on the manual key presses"""
+        """Sets the pedal and steering inputs based on the manual key presses"""
         self.navigation = ManualControl()
         if is_key_down(KEY_RIGHT):
             self.navigation.steering = SteeringDirection.RIGHT
@@ -149,7 +159,7 @@ class Car:
         self.waypoint = Vector3(collision_point.point.x, collision_point.point.y + 0.3, collision_point.point.z)
 
     def navigate_to_waypoint(self, waypoint):
-        """Navigate to the given waypoint"""
+        """Sets the pedal and steering inputs to navigate to the waypoint"""
         self.navigation = Navigation()
         # Calculate direction vector from car to waypoint
         dx = waypoint.x - self.position.x
