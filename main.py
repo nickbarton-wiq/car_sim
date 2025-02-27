@@ -69,7 +69,7 @@ while not window_should_close():
     draw_text(f"angle: {car.angle:.2f}", 10, 100, 20, DARKGRAY)
 
     if car.waypoints:
-        draw_text(f"navigation: {car.navigation}", 10, 130, 20, DARKGRAY)
+        draw_text(f"driver: {car.driver}", 10, 130, 20, DARKGRAY)
         current_waypoint = car.waypoints[0]
         distance = sqrt((current_waypoint.x - car.position.x)**2 + (current_waypoint.z - car.position.z)**2)
         draw_text(f"distance to next waypoint: {distance:.2f}", 10, 160, 20, DARKGRAY)

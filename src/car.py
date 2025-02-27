@@ -1,3 +1,4 @@
+from abc import abstractmethod, ABC
 from enum import Enum, auto
 from math import sin, cos, radians, degrees, sqrt, atan2, copysign
 from pyray import draw_model_ex, is_key_down, get_mouse_position, get_screen_to_world_ray, get_ray_collision_quad
@@ -5,7 +6,7 @@ from pyray import Vector3, RAYWHITE
 from raylib import KEY_UP, KEY_DOWN, KEY_SPACE, KEY_RIGHT, KEY_LEFT
 
 
-class SteeringDirection(Enum):
+class SteeringCommand(Enum):
     NONE = auto()
     LEFT = auto()
     RIGHT = auto()
@@ -13,28 +14,30 @@ class SteeringDirection(Enum):
 
 class AccelerationCommand(Enum):
     NONE = auto()
-    ACCELERATE = auto()  # Forward acceleration
-    REVERSE = auto()     # Reverse movement
-    BRAKE = auto()       # Active braking
-    STOP = auto()        # Complete stop
+    ACCELERATE = auto()
+    REVERSE = auto()
+    BRAKE = auto()
+    STOP = auto()
 
 
-class Navigation:
+class Driver(ABC):
     def __init__(self):
-        self.steering = SteeringDirection.NONE
+        self.steering = SteeringCommand.NONE
         self.acceleration = AccelerationCommand.NONE
 
+    @abstractmethod
     def __str__(self):
-        return f"Navigation(steering={self.steering.name}, acceleration={self.acceleration.name})"
+        pass
 
 
-class ManualControl:
-    def __init__(self):
-        self.steering = SteeringDirection.NONE
-        self.acceleration = AccelerationCommand.NONE
-
+class User(Driver):
     def __str__(self):
-        return f"ManualControl(steering={self.steering.name}, acceleration={self.acceleration.name})"
+        return f"User(steering={self.steering.name}, acceleration={self.acceleration.name})"
+
+
+class AutoPilot(Driver):
+    def __str__(self):
+        return f"AutoPilot(steering={self.steering.name}, acceleration={self.acceleration.name})"
 
 
 class Car:
@@ -46,13 +49,11 @@ class Car:
         self.length = length
         self.max_acceleration = max_acceleration
         self.max_steering = max_steering
-        self.steering_factor = 400  # Increase steering_factor for tighter turns
         self.max_velocity = 5
         self.brake_deceleration = 20
         self.free_deceleration = 2
 
-        # Create navigation object
-        self.navigation: Navigation | ManualControl = ManualControl()
+        self.driver: AutoPilot | User = User()
         self.acceleration = 0.0
         self.steering = 0.0
         self.waypoints = []
@@ -69,46 +70,53 @@ class Car:
             self.manual_navigation()
         self.update_position(dt)
 
+    def update_position(self, dt):
+        """Update the car's position from pedal and steering inputs"""
+        self.handle_pedal_input(dt)
+        self.handle_steering_wheel_input(dt)
+
+        # Update position based on pedal and steering input
+        self.position.x += self.velocity.x * sin(radians(self.angle)) * dt
+        self.position.z += self.velocity.x * cos(radians(self.angle)) * dt
+
     def handle_steering_wheel_input(self, dt):
         """Handle steering inputs"""
-        if self.navigation.steering == SteeringDirection.RIGHT:
+        # Process steering input
+        if self.driver.steering == SteeringCommand.RIGHT:
             self.steering -= self.max_steering * dt
-        elif self.navigation.steering == SteeringDirection.LEFT:
+        elif self.driver.steering == SteeringCommand.LEFT:
             self.steering += self.max_steering * dt
         else:
             self.steering = 0
+
+        # Clamp steering value
         self.steering = max(-self.max_steering, min(self.steering, self.max_steering))
 
-        # Update angle based on steering and velocity
-        if self.steering:
-            # Reduced turning radius for tighter turns
-            turning_radius = self.length / (2 * sin(radians(self.steering)))
-            # Multiply by 2 for faster turning rate
-            angular_velocity = 2 * self.velocity.x / turning_radius
-        else:
-            angular_velocity = 0
-
-        self.angle += degrees(angular_velocity) * dt
-        self.angle %= 360
+        # Only calculate angular velocity if steering or moving
+        if self.steering and self.velocity.x != 0:
+            # Calculate turning radius and angular velocity in one step
+            angular_velocity = 2 * self.velocity.x * sin(radians(self.steering)) / self.length
+            self.angle += degrees(angular_velocity) * dt
+            self.angle %= 360
 
     def handle_pedal_input(self, dt):
         """Handle acceleration inputs"""
-        if self.navigation.acceleration == AccelerationCommand.ACCELERATE:
+        if self.driver.acceleration == AccelerationCommand.ACCELERATE:
             if self.velocity.x < 0:
                 self.acceleration = self.brake_deceleration
             else:
                 self.acceleration += self.max_acceleration * dt
-        elif self.navigation.acceleration == AccelerationCommand.REVERSE:
+        elif self.driver.acceleration == AccelerationCommand.REVERSE:
             if self.velocity.x > 0:
                 self.acceleration = -self.brake_deceleration
             else:
                 self.acceleration -= self.max_acceleration * dt
-        elif self.navigation.acceleration == AccelerationCommand.BRAKE:
+        elif self.driver.acceleration == AccelerationCommand.BRAKE:
             if abs(self.velocity.x) > dt * self.brake_deceleration:
                 self.acceleration = -copysign(self.brake_deceleration, self.velocity.x)
             else:
                 self.acceleration = -self.velocity.x / dt
-        elif self.navigation.acceleration == AccelerationCommand.STOP:
+        elif self.driver.acceleration == AccelerationCommand.STOP:
             self.acceleration = 0
             self.velocity.x = 0
         else:
@@ -123,33 +131,24 @@ class Car:
         self.velocity.x += self.acceleration * dt
         self.velocity.x = max(-self.max_velocity, min(self.velocity.x, self.max_velocity))
 
-    def update_position(self, dt):
-        """Update the car's position from pedal and steering inputs"""
-        self.handle_pedal_input(dt)
-        self.handle_steering_wheel_input(dt)
-
-        # Update position based on pedal and steering input
-        self.position.x += self.velocity.x * sin(radians(self.angle)) * dt
-        self.position.z += self.velocity.x * cos(radians(self.angle)) * dt
-
     def manual_navigation(self):
         """Sets the pedal and steering inputs based on the manual key presses"""
-        self.navigation = ManualControl()
+        self.driver = User()
         if is_key_down(KEY_RIGHT):
-            self.navigation.steering = SteeringDirection.RIGHT
+            self.driver.steering = SteeringCommand.RIGHT
         elif is_key_down(KEY_LEFT):
-            self.navigation.steering = SteeringDirection.LEFT
+            self.driver.steering = SteeringCommand.LEFT
         else:
-            self.navigation.steering = SteeringDirection.NONE
+            self.driver.steering = SteeringCommand.NONE
 
         if is_key_down(KEY_UP):
-            self.navigation.acceleration = AccelerationCommand.ACCELERATE
+            self.driver.acceleration = AccelerationCommand.ACCELERATE
         elif is_key_down(KEY_DOWN):
-            self.navigation.acceleration = AccelerationCommand.REVERSE
+            self.driver.acceleration = AccelerationCommand.REVERSE
         elif is_key_down(KEY_SPACE):
-            self.navigation.acceleration = AccelerationCommand.BRAKE
+            self.driver.acceleration = AccelerationCommand.BRAKE
         else:
-            self.navigation.acceleration = AccelerationCommand.NONE
+            self.driver.acceleration = AccelerationCommand.NONE
 
     def add_waypoint(self, camera, world):
         """Add a waypoint to the list of waypoints"""
@@ -161,7 +160,7 @@ class Car:
 
     def navigate_to_waypoint(self, waypoint):
         """Sets the pedal and steering inputs to navigate to the waypoint"""
-        self.navigation = Navigation()
+        self.driver = AutoPilot()
         # Calculate direction vector from car to waypoint
         dx = waypoint.x - self.position.x
         dz = waypoint.z - self.position.z
@@ -171,13 +170,14 @@ class Car:
 
         # Calculate angle difference considering circular nature of angles
         angle_diff = (target_angle - self.angle + 180) % 360 - 180
-        self.steering = max(-self.max_steering, min(self.max_steering, angle_diff * self.steering_factor))
 
         # Set steering direction
-        if abs(angle_diff) > 5:
-            self.navigation.steering = SteeringDirection.LEFT if angle_diff > 0 else SteeringDirection.RIGHT
+        if angle_diff > 5:
+            self.driver.steering = SteeringCommand.LEFT
+        elif angle_diff < 5:
+            self.driver.steering = SteeringCommand.RIGHT
         else:
-            self.navigation.steering = SteeringDirection.NONE
+            self.driver.steering = SteeringCommand.NONE
 
         # Calculate distance to waypoint
         distance = sqrt(dx*dx + dz*dz)
@@ -190,7 +190,7 @@ class Car:
         if is_last_waypoint:
             if distance >= 3:
                 # Far from waypoint - accelerate
-                self.navigation.acceleration = AccelerationCommand.ACCELERATE
+                self.driver.acceleration = AccelerationCommand.ACCELERATE
             if distance < 3:
                 # Getting closer - reduce speed for more precise turning
                 if facing_waypoint:
@@ -198,27 +198,28 @@ class Car:
                     speed_factor = 0.5
                     target_speed = min(self.max_velocity * speed_factor, distance)
                     if self.velocity.x < target_speed:
-                        self.navigation.acceleration = AccelerationCommand.ACCELERATE
+                        self.driver.acceleration = AccelerationCommand.ACCELERATE
                     else:
-                        self.navigation.acceleration = AccelerationCommand.NONE
+                        self.driver.acceleration = AccelerationCommand.NONE
                 else:
                     # We're facing away from target but close - use reverse
-                    self.navigation.acceleration = AccelerationCommand.REVERSE
+                    self.driver.acceleration = AccelerationCommand.REVERSE
             if distance <= 1.5:
                 # Very close to waypoint
                 if abs(self.velocity.x) < 0.1:
                     self.waypoints.pop(0)
-                    self.navigation.acceleration = AccelerationCommand.STOP
+                    self.driver.acceleration = AccelerationCommand.STOP
                     self.velocity.x = 0
-                    self.navigation.steering = SteeringDirection.NONE
-                    self.navigation.acceleration = AccelerationCommand.NONE
+                    self.driver.steering = SteeringCommand.NONE
+                    self.driver.acceleration = AccelerationCommand.NONE
                 else:
-                    self.navigation.acceleration = AccelerationCommand.BRAKE
+                    self.driver.acceleration = AccelerationCommand.BRAKE
         else:
-            if facing_waypoint:
-                self.navigation.acceleration = AccelerationCommand.ACCELERATE
-            elif not facing_waypoint:  # Not facing waypoint
-                self.navigation.acceleration = AccelerationCommand.REVERSE
+            if not facing_waypoint and distance < 3:
+                self.driver.acceleration = AccelerationCommand.REVERSE
+            else:
+                self.driver.acceleration = AccelerationCommand.ACCELERATE
+
             # if we are close to the waypoint, remove it and move to the next one
             if distance < 1:
                 self.waypoints.pop(0)
