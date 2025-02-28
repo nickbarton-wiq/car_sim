@@ -1,7 +1,7 @@
 [project]
-name = "truck-driver"
+name = "car-sim"
 version = "0.1.0"
-description = "Add your description here"
+description = "Drive a car in a 3D world"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
